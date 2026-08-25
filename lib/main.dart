@@ -1,17 +1,64 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 void main() {
   runApp(const InstagramUiApp());
 }
+
+final GoRouter _router = GoRouter(
+  initialLocation: '/',
+  routes: [
+    ShellRoute(
+      builder: (context, state, child) {
+        return InstagramNavigationShell(
+          location: state.matchedLocation,
+          child: child,
+        );
+      },
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => const InstagramHomeScreen(),
+        ),
+        GoRoute(
+          path: '/search',
+          builder: (context, state) =>
+              const InstagramTabScreen(icon: Icons.search, title: 'Search'),
+        ),
+        GoRoute(
+          path: '/create',
+          builder: (context, state) => const InstagramTabScreen(
+            icon: Icons.add_box_outlined,
+            title: 'Create',
+          ),
+        ),
+        GoRoute(
+          path: '/reels',
+          builder: (context, state) => const InstagramTabScreen(
+            icon: Icons.video_collection_outlined,
+            title: 'Reels',
+          ),
+        ),
+        GoRoute(
+          path: '/profile',
+          builder: (context, state) => const InstagramTabScreen(
+            icon: Icons.account_circle_outlined,
+            title: 'Profile',
+          ),
+        ),
+      ],
+    ),
+  ],
+);
 
 class InstagramUiApp extends StatelessWidget {
   const InstagramUiApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp.router(
       debugShowCheckedModeBanner: false,
-      home: InstagramHomeScreen(),
+      routerConfig: _router,
     );
   }
 }
@@ -21,21 +68,14 @@ class InstagramHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const _TopBar(),
-            const Divider(height: 1, color: Color(0xFFE6E6E6)),
-            const _UserHeader(),
-            const Expanded(child: _PostImage()),
-            const _PostDetails(),
-            const Divider(height: 1, color: Color(0xFFE6E6E6)),
-            const _BottomNavigation(),
-          ],
-        ),
-      ),
+    return const Column(
+      children: [
+        _TopBar(),
+        Divider(height: 1, color: Color(0xFFE6E6E6)),
+        _UserHeader(),
+        Expanded(child: _PostImage()),
+        _PostDetails(),
+      ],
     );
   }
 }
@@ -233,21 +273,112 @@ class _PostDetails extends StatelessWidget {
   }
 }
 
-class _BottomNavigation extends StatelessWidget {
-  const _BottomNavigation();
+class InstagramNavigationShell extends StatelessWidget {
+  const InstagramNavigationShell({
+    required this.location,
+    required this.child,
+    super.key,
+  });
+
+  final String location;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: child),
+            const Divider(height: 1, color: Color(0xFFE6E6E6)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _NavigationItem(
+                    icon: Icons.home,
+                    route: '/',
+                    selected: location == '/',
+                  ),
+                  _NavigationItem(
+                    icon: Icons.search,
+                    route: '/search',
+                    selected: location == '/search',
+                  ),
+                  _NavigationItem(
+                    icon: Icons.add_box_outlined,
+                    route: '/create',
+                    selected: location == '/create',
+                  ),
+                  _NavigationItem(
+                    icon: Icons.video_collection_outlined,
+                    route: '/reels',
+                    selected: location == '/reels',
+                  ),
+                  _NavigationItem(
+                    icon: Icons.account_circle_outlined,
+                    route: '/profile',
+                    selected: location == '/profile',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NavigationItem extends StatelessWidget {
+  const _NavigationItem({
+    required this.icon,
+    required this.route,
+    required this.selected,
+  });
+
+  final IconData icon;
+  final String route;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      key: ValueKey('navigation-$route'),
+      onPressed: () => context.go(route),
+      icon: Icon(
+        icon,
+        size: 29,
+        color: selected ? const Color(0xFF111111) : const Color(0xFF777777),
+      ),
+    );
+  }
+}
+
+class InstagramTabScreen extends StatelessWidget {
+  const InstagramTabScreen({
+    required this.icon,
+    required this.title,
+    super.key,
+  });
+
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.home, size: 29),
-          Icon(Icons.search, size: 29),
-          Icon(Icons.add_box_outlined, size: 29),
-          Icon(Icons.video_collection_outlined, size: 29),
-          Icon(Icons.account_circle_outlined, size: 29),
+          Icon(icon, size: 72, color: const Color(0xFF777777)),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
