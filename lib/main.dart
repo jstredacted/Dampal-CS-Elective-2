@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import 'screens/pokedex_screen.dart';
+import 'providers/pokemon_provider.dart';
 import 'services/pokemon_service.dart';
 
 void main() {
@@ -14,17 +16,26 @@ class PokedexApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Pokédex',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFDC0A2D),
-          brightness: Brightness.light,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) =>
+              PokemonProvider(service: service ?? PokemonService())
+                ..fetchPokemon(),
         ),
-        useMaterial3: true,
+      ],
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'Pokédex',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFFDC0A2D),
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
+        ),
+        home: const PokedexScreen(),
       ),
-      home: PokedexScreen(service: service),
     );
   }
 }

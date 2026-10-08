@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:dampal_cs_elective_2/main.dart';
 import 'package:dampal_cs_elective_2/models/pokemon.dart';
+import 'package:dampal_cs_elective_2/providers/pokemon_provider.dart';
+import 'package:dampal_cs_elective_2/screens/pokemon_detail_screen.dart';
 import 'package:dampal_cs_elective_2/services/pokemon_service.dart';
 import 'package:dampal_cs_elective_2/widgets/pokemon_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 class FakePokemonService extends PokemonService {
   FakePokemonService(this.load);
@@ -92,7 +95,13 @@ void main() {
         scrollable: find.byType(Scrollable),
       );
       expect(find.text('#030'), findsOneWidget);
+      await tester.ensureVisible(find.text('pokemon-30'));
+      await tester.pump();
       await tester.tap(find.text('pokemon-30'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PokemonDetailScreen), findsOneWidget);
+      expect(find.text('#030'), findsOneWidget);
+      await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.byType(GridView), findsOneWidget);
       expect(service.calls, 1);
@@ -172,6 +181,63 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     pending.complete([bulbasaur]);
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('refresh fetches new Provider data and disables while loading', (
+    tester,
+  ) async {
+    final pending = Completer<List<Pokemon>>();
+    var attempts = 0;
+    final service = FakePokemonService(() {
+      attempts++;
+      return attempts == 1 ? Future.value([bulbasaur]) : pending.future;
+    });
+    await tester.pumpWidget(PokedexApp(service: service));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Refresh Pokémon'));
+    await tester.pump();
+    expect(find.text('Loading Pokémon…'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.refresh))
+          .onPressed,
+      isNull,
+    );
+    pending.complete([const Pokemon(name: 'ivysaur', id: 2, imageUrl: '')]);
+    await tester.pumpAndSettle();
+    expect(find.text('ivysaur'), findsOneWidget);
+    expect(find.text('bulbasaur'), findsNothing);
+    expect(service.calls, 2);
+  });
+
+  testWidgets('detail listens to Provider instead of a passed Pokémon copy', (
+    tester,
+  ) async {
+    var attempts = 0;
+    final service = FakePokemonService(() async {
+      attempts++;
+      return [
+        Pokemon(
+          name: attempts == 1 ? 'bulbasaur' : 'updated-bulbasaur',
+          id: 1,
+          imageUrl: '',
+        ),
+      ];
+    });
+    await tester.pumpWidget(PokedexApp(service: service));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('bulbasaur'));
+    await tester.pumpAndSettle();
+    final context = tester.element(find.byType(PokemonDetailScreen));
+    await context.read<PokemonProvider>().fetchPokemon();
+    await tester.pumpAndSettle();
+    expect(find.text('updated-bulbasaur'), findsNWidgets(2));
+    expect(find.text('#001'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('updated-bulbasaur'), findsOneWidget);
+    expect(service.calls, 2);
     expect(tester.takeException(), isNull);
   });
 }

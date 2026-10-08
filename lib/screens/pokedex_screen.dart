@@ -1,64 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../models/pokemon.dart';
-import '../services/pokemon_service.dart';
+import '../providers/pokemon_provider.dart';
 import '../widgets/pokemon_card.dart';
+import 'pokemon_detail_screen.dart';
 
-class PokedexScreen extends StatefulWidget {
-  const PokedexScreen({this.service, super.key});
-
-  final PokemonService? service;
-
-  @override
-  State<PokedexScreen> createState() => _PokedexScreenState();
-}
-
-class _PokedexScreenState extends State<PokedexScreen> {
-  late final PokemonService _service;
-  late Future<List<Pokemon>> _pokemonFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _service = widget.service ?? PokemonService();
-    _pokemonFuture = _service.fetchPokemon();
-  }
-
-  void _tryAgain() {
-    setState(() {
-      _pokemonFuture = _service.fetchPokemon();
-    });
-  }
+class PokedexScreen extends StatelessWidget {
+  const PokedexScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final pokemonProvider = context.watch<PokemonProvider>();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pokédex'),
         centerTitle: false,
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
+        actions: [
+          IconButton(
+            onPressed: pokemonProvider.status == PokemonStatus.loading
+                ? null
+                : () => context.read<PokemonProvider>().fetchPokemon(),
+            tooltip: 'Refresh Pokémon',
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
       body: SafeArea(
-        child: FutureBuilder<List<Pokemon>>(
-          future: _pokemonFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const _LoadingState();
-            }
-
-            if (snapshot.hasError) {
-              return _ErrorState(onTryAgain: _tryAgain);
-            }
-
-            final pokemon = snapshot.data ?? <Pokemon>[];
-            if (pokemon.isEmpty) {
-              return const _EmptyState();
-            }
-
-            return _PokemonGrid(pokemon: pokemon);
-          },
-        ),
+        child: switch (pokemonProvider.status) {
+          PokemonStatus.loading => const _LoadingState(),
+          PokemonStatus.error => _ErrorState(
+            onTryAgain: () => context.read<PokemonProvider>().fetchPokemon(),
+          ),
+          PokemonStatus.success when pokemonProvider.pokemon.isEmpty =>
+            const _EmptyState(),
+          PokemonStatus.success => _PokemonGrid(
+            pokemon: pokemonProvider.pokemon,
+          ),
+        },
       ),
     );
   }
@@ -90,7 +72,19 @@ class _PokemonGrid extends StatelessWidget {
           ),
           itemCount: pokemon.length,
           itemBuilder: (context, index) {
-            return PokemonCard(pokemon: pokemon[index]);
+            final selectedPokemon = pokemon[index];
+            return PokemonCard(
+              pokemon: selectedPokemon,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        PokemonDetailScreen(pokemonId: selectedPokemon.id),
+                  ),
+                );
+              },
+            );
           },
         );
       },
