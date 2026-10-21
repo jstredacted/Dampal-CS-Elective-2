@@ -1,41 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'screens/pokedex_screen.dart';
-import 'providers/pokemon_provider.dart';
-import 'services/pokemon_service.dart';
 
 void main() {
-  runApp(const PokedexApp());
+  runApp(
+    // ProviderScope stores the state of every Riverpod provider in the app.
+    const ProviderScope(child: PokedexApp()),
+  );
 }
 
 class PokedexApp extends StatelessWidget {
-  const PokedexApp({this.service, super.key});
-
-  final PokemonService? service;
+  const PokedexApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(
-          create: (_) =>
-              PokemonProvider(service: service ?? PokemonService())
-                ..fetchPokemon(),
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Pokédex',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFDC0A2D),
+          brightness: Brightness.light,
         ),
-      ],
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'Pokédex',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFFDC0A2D),
-            brightness: Brightness.light,
-          ),
-          useMaterial3: true,
-        ),
-        home: const PokedexScreen(),
+        useMaterial3: true,
       ),
+      home: const PokedexScreen(),
     );
   }
 }

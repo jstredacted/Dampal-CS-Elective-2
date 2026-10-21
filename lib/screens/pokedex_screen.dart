@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/pokedex_state.dart';
 import '../models/pokemon.dart';
-import '../providers/pokemon_provider.dart';
+import '../providers/pokedex_notifier.dart';
+import '../widgets/favorites_panel.dart';
 import '../widgets/pokemon_card.dart';
+import '../widgets/type_filter_bar.dart';
 import 'pokemon_detail_screen.dart';
 
-class PokedexScreen extends StatelessWidget {
+class PokedexScreen extends ConsumerWidget {
   const PokedexScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final pokemonProvider = context.watch<PokemonProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    // watch: rebuild this screen whenever the Pokédex state changes.
+    final state = ref.watch(pokedexProvider);
+    // read: get the notifier once to call a method; no rebuilds needed.
+    final notifier = ref.read(pokedexProvider.notifier);
+    final hasPokemon =
+        state.status == PokemonStatus.success && state.pokemon.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -20,29 +28,50 @@ class PokedexScreen extends StatelessWidget {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
+          const FavoritesButton(),
           IconButton(
-            onPressed: pokemonProvider.status == PokemonStatus.loading
+            onPressed: state.status == PokemonStatus.loading
                 ? null
-                : () => context.read<PokemonProvider>().fetchPokemon(),
+                : notifier.fetchPokemon,
             tooltip: 'Refresh Pokémon',
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
       body: SafeArea(
-        child: switch (pokemonProvider.status) {
-          PokemonStatus.loading => const _LoadingState(),
-          PokemonStatus.error => _ErrorState(
-            onTryAgain: () => context.read<PokemonProvider>().fetchPokemon(),
-          ),
-          PokemonStatus.success when pokemonProvider.pokemon.isEmpty =>
-            const _EmptyState(),
-          PokemonStatus.success => _PokemonGrid(
-            pokemon: pokemonProvider.pokemon,
-          ),
-        },
+        child: Column(
+          children: [
+            const FavoritesPanel(),
+            if (hasPokemon) const TypeFilterBar(),
+            Expanded(
+              child: switch (state.status) {
+                PokemonStatus.loading => const _LoadingState(),
+                PokemonStatus.error => _ErrorState(
+                  message: _errorMessage(state.error),
+                  onTryAgain: notifier.fetchPokemon,
+                ),
+                PokemonStatus.success when state.pokemon.isEmpty =>
+                  const _EmptyState(),
+                PokemonStatus.success when state.visiblePokemon.isEmpty =>
+                  _NoMatchState(
+                    type: state.selectedType ?? '',
+                    onClear: notifier.clearTypeFilter,
+                  ),
+                PokemonStatus.success => RefreshIndicator(
+                  onRefresh: notifier.fetchPokemon,
+                  child: _PokemonGrid(pokemon: state.visiblePokemon),
+                ),
+              },
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  static String _errorMessage(Object? error) {
+    final text = error?.toString() ?? '';
+    return text.replaceFirst('Exception: ', '');
   }
 }
 
@@ -63,12 +92,14 @@ class _PokemonGrid extends StatelessWidget {
         };
 
         return GridView.builder(
+          // Lets pull-to-refresh work even when the grid is short.
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            mainAxisExtent: 170 + MediaQuery.textScalerOf(context).scale(40),
+            mainAxisExtent: 170 + MediaQuery.textScalerOf(context).scale(80),
           ),
           itemCount: pokemon.length,
           itemBuilder: (context, index) {
@@ -111,8 +142,9 @@ class _LoadingState extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.onTryAgain});
+  const _ErrorState({required this.message, required this.onTryAgain});
 
+  final String message;
   final VoidCallback onTryAgain;
 
   @override
@@ -136,8 +168,10 @@ class _ErrorState extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Check your internet connection and try again.',
+              Text(
+                message.isEmpty
+                    ? 'Check your internet connection and try again.'
+                    : message,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
@@ -163,6 +197,33 @@ class _EmptyState extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.all(24),
         child: Text('No Pokémon found.', textAlign: TextAlign.center),
+      ),
+    );
+  }
+}
+
+class _NoMatchState extends StatelessWidget {
+  const _NoMatchState({required this.type, required this.onClear});
+
+  final String type;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('No $type Pokémon found.', textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onClear,
+              child: const Text('Clear filter'),
+            ),
+          ],
+        ),
       ),
     );
   }
