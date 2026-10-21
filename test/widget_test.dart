@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dampal_cs_elective_2/models/pokemon.dart';
 import 'package:dampal_cs_elective_2/screens/pokemon_detail_screen.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -86,6 +87,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(service.calls, 2);
     expect(find.text('bulbasaur'), findsOneWidget);
+  });
+
+  testWidgets('pull-to-refresh also works with a mouse drag', (tester) async {
+    final service = FakePokemonService(() async => starters);
+    await tester.pumpWidget(appWith(service));
+    await tester.pumpAndSettle();
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('bulbasaur')),
+      kind: PointerDeviceKind.mouse,
+    );
+    for (var i = 0; i < 20; i++) {
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(service.calls, 2);
   });
 
   testWidgets('type filter shows matching Pokémon and clears', (tester) async {
