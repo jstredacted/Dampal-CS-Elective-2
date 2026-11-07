@@ -1,47 +1,92 @@
-import 'package:dampal_cs_elective_2/main.dart';
-import 'package:dampal_cs_elective_2/models/pokemon.dart';
-import 'package:dampal_cs_elective_2/providers/pokedex_notifier.dart';
-import 'package:dampal_cs_elective_2/services/pokemon_service.dart';
-import 'package:flutter/widgets.dart';
+import 'package:dampal_cs_elective_2/models/category.dart';
+import 'package:dampal_cs_elective_2/models/product.dart';
+import 'package:dampal_cs_elective_2/models/product_filter.dart';
+import 'package:dampal_cs_elective_2/models/product_page.dart';
+import 'package:dampal_cs_elective_2/pages/products_page.dart';
+import 'package:dampal_cs_elective_2/providers/category_provider.dart';
+import 'package:dampal_cs_elective_2/providers/product_provider.dart';
+import 'package:dampal_cs_elective_2/services/product_service.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class FakePokemonService extends PokemonService {
-  FakePokemonService(this.load);
+const categories = [
+  Category(id: 1, name: 'Running'),
+  Category(id: 2, name: 'Skate'),
+];
 
-  final Future<List<Pokemon>> Function() load;
-  int calls = 0;
+// Products 1-21. Odd ids are Running, even ids are Skate.
+// Prices go up by ₱500: Shoe 1 = ₱500, Shoe 21 = ₱10,500.
+List<Product> sampleProducts() => [
+  for (var i = 1; i <= 21; i++)
+    Product(
+      id: i,
+      name: 'Shoe $i',
+      description: 'Description $i',
+      price: i * 500,
+      stock: i,
+      imageUrl: '',
+      categoryId: i.isOdd ? 1 : 2,
+    ),
+];
+
+// Works like the Supabase query, but on a list in memory.
+class FakeProductService implements ProductService {
+  FakeProductService(this.products);
+
+  final List<Product> products;
+  final List<ProductFilter> requests = [];
+  int _nextId = 100;
 
   @override
-  Future<List<Pokemon>> fetchPokemon() {
-    calls++;
-    return load();
+  Future<ProductPage> fetchProducts(ProductFilter filter) async {
+    requests.add(filter);
+    final term = filter.search.trim().toLowerCase();
+    final matches = products.where((p) {
+      return (term.isEmpty || p.name.toLowerCase().contains(term)) &&
+          (filter.categoryId == null || p.categoryId == filter.categoryId) &&
+          p.price >= filter.minPrice &&
+          p.price <= filter.maxPrice;
+    }).toList();
+    final from = filter.page * productsPerPage;
+    return ProductPage(
+      items: matches.skip(from).take(productsPerPage).toList(),
+      totalCount: matches.length,
+      page: filter.page,
+    );
+  }
+
+  @override
+  Future<void> addProduct(Product product) async {
+    final saved = Product(
+      id: _nextId++,
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      stock: product.stock,
+      imageUrl: product.imageUrl,
+      categoryId: product.categoryId,
+    );
+    products.insert(0, saved);
+  }
+
+  @override
+  Future<void> updateProduct(Product product) async {
+    final index = products.indexWhere((p) => p.id == product.id);
+    products[index] = product;
+  }
+
+  @override
+  Future<void> deleteProduct(int id) async {
+    products.removeWhere((p) => p.id == id);
   }
 }
 
-const bulbasaur = Pokemon(
-  name: 'bulbasaur',
-  id: 1,
-  imageUrl: '',
-  types: ['grass', 'poison'],
-);
-const charmander = Pokemon(
-  name: 'charmander',
-  id: 4,
-  imageUrl: '',
-  types: ['fire'],
-);
-const squirtle = Pokemon(
-  name: 'squirtle',
-  id: 7,
-  imageUrl: '',
-  types: ['water'],
-);
-const starters = [bulbasaur, charmander, squirtle];
-
-/// The real app, with the network service swapped for [service].
-Widget appWith(PokemonService service) {
+Widget appWith(FakeProductService service, {Widget? home}) {
   return ProviderScope(
-    overrides: [pokemonServiceProvider.overrideWithValue(service)],
-    child: const PokedexApp(),
+    overrides: [
+      productServiceProvider.overrideWithValue(service),
+      categoryProvider.overrideWith((ref) async => categories),
+    ],
+    child: MaterialApp(home: home ?? const ProductsPage()),
   );
 }

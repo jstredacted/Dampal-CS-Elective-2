@@ -1,304 +1,227 @@
-import 'dart:async';
-
-import 'package:dampal_cs_elective_2/models/pokemon.dart';
-import 'package:dampal_cs_elective_2/screens/pokemon_detail_screen.dart';
-import 'package:flutter/gestures.dart';
+import 'package:dampal_cs_elective_2/models/product.dart';
+import 'package:dampal_cs_elective_2/models/product_page.dart';
+import 'package:dampal_cs_elective_2/pages/product_form_page.dart';
+import 'package:dampal_cs_elective_2/providers/product_filter_provider.dart';
+import 'package:dampal_cs_elective_2/providers/product_provider.dart';
+import 'package:dampal_cs_elective_2/utils/format.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes.dart';
 
-Finder cardHeart(String name) => find.descendant(
-  of: find.ancestor(of: find.text(name), matching: find.byType(Card)),
-  matching: find.byType(IconButton),
-);
+Future<void> useTallScreen(WidgetTester tester) async {
+  tester.view.physicalSize = const Size(1200, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
 
-Future<void> openDetail(WidgetTester tester, String name) async {
-  await tester.tap(find.text(name));
-  await tester.pumpAndSettle();
-  expect(find.byType(PokemonDetailScreen), findsOneWidget);
+String fieldText(WidgetTester tester, String label) {
+  final field = tester.widget<TextField>(
+    find.descendant(
+      of: find.widgetWithText(TextFormField, label),
+      matching: find.byType(TextField),
+    ),
+  );
+  return field.controller!.text;
 }
 
 void main() {
-  testWidgets('shows loading until the Future completes', (tester) async {
-    final pending = Completer<List<Pokemon>>();
-    final service = FakePokemonService(() => pending.future);
-    await tester.pumpWidget(appWith(service));
-    await tester.pump();
-    expect(find.text('Loading Pokémon…'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-
-    pending.complete([]);
-    await tester.pumpAndSettle();
-    expect(find.text('No Pokémon found.'), findsOneWidget);
-    expect(service.calls, 1);
+  test('totalPages rounds up and is at least 1', () {
+    expect(const ProductPage(items: [], totalCount: 21, page: 0).totalPages, 4);
+    expect(const ProductPage(items: [], totalCount: 12, page: 0).totalPages, 2);
+    expect(const ProductPage(items: [], totalCount: 0, page: 0).totalPages, 1);
   });
 
-  testWidgets('shows a meaningful error and retries', (tester) async {
-    var attempts = 0;
-    final service = FakePokemonService(() {
-      attempts++;
-      if (attempts == 1) {
-        return Future.error(Exception('Could not connect to PokéAPI.'));
-      }
-      return Future.value(starters);
-    });
-    await tester.pumpWidget(appWith(service));
-    await tester.pumpAndSettle();
-    expect(find.text('Unable to load Pokémon.'), findsOneWidget);
-    expect(find.text('Could not connect to PokéAPI.'), findsOneWidget);
-
-    await tester.tap(find.text('Try again'));
-    await tester.pumpAndSettle();
-    expect(find.text('bulbasaur'), findsOneWidget);
-    expect(service.calls, 2);
+  test('formatPeso adds commas and two decimals', () {
+    expect(formatPeso(12999), '₱12,999.00');
+    expect(formatPeso(500.5), '₱500.50');
+    expect(formatPeso(1234567), '₱1,234,567.00');
   });
 
-  testWidgets('refresh button calls fetchPokemon again', (tester) async {
-    final pending = Completer<List<Pokemon>>();
-    var attempts = 0;
-    final service = FakePokemonService(() {
-      attempts++;
-      return attempts == 1 ? Future.value(starters) : pending.future;
-    });
-    await tester.pumpWidget(appWith(service));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Refresh Pokémon'));
-    await tester.pump();
-    expect(find.text('Loading Pokémon…'), findsOneWidget);
-    final refresh = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.refresh),
+  test('changing the price range goes back to the first page', () async {
+    final service = FakeProductService(sampleProducts());
+    final container = ProviderContainer(
+      overrides: [productServiceProvider.overrideWithValue(service)],
     );
-    expect(refresh.onPressed, isNull);
+    addTearDown(container.dispose);
+    final filter = container.read(productFilterProvider.notifier);
 
-    pending.complete(starters);
-    await tester.pumpAndSettle();
-    expect(find.text('squirtle'), findsOneWidget);
-    expect(service.calls, 2);
+    filter.setPage(2);
+    filter.setPriceRange(2000, 6000);
+    final page = await container.read(productProvider.future);
+
+    expect(service.requests.last.page, 0);
+    expect(service.requests.last.minPrice, 2000);
+    // Shoes 4-12 cost ₱2,000-₱6,000, so page 1 shows Shoes 4-9.
+    expect(page.totalCount, 9);
+    expect(page.items.map((p) => p.name), [
+      'Shoe 4',
+      'Shoe 5',
+      'Shoe 6',
+      'Shoe 7',
+      'Shoe 8',
+      'Shoe 9',
+    ]);
   });
 
-  testWidgets('pull-to-refresh calls fetchPokemon again', (tester) async {
-    final service = FakePokemonService(() async => starters);
-    await tester.pumpWidget(appWith(service));
+  testWidgets('shows 6 products per page and moves between pages', (
+    tester,
+  ) async {
+    await useTallScreen(tester);
+    await tester.pumpWidget(appWith(FakeProductService(sampleProducts())));
     await tester.pumpAndSettle();
 
-    await tester.fling(find.text('bulbasaur'), const Offset(0, 400), 1000);
+    expect(find.text('Page 1 of 4'), findsOneWidget);
+    expect(find.text('21 products'), findsOneWidget);
+    expect(find.text('Shoe 6'), findsOneWidget);
+    expect(find.text('Shoe 7'), findsNothing);
+
+    await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
-    expect(service.calls, 2);
-    expect(find.text('bulbasaur'), findsOneWidget);
+    expect(find.text('Page 2 of 4'), findsOneWidget);
+    expect(find.text('Shoe 7'), findsOneWidget);
+    expect(find.text('Shoe 1'), findsNothing);
+
+    await tester.tap(find.text('Previous'));
+    await tester.pumpAndSettle();
+    expect(find.text('Page 1 of 4'), findsOneWidget);
   });
 
-  testWidgets('pull-to-refresh also works with a mouse drag', (tester) async {
-    final service = FakePokemonService(() async => starters);
-    await tester.pumpWidget(appWith(service));
+  testWidgets('category and search filters reset to page 1', (tester) async {
+    await useTallScreen(tester);
+    await tester.pumpWidget(appWith(FakeProductService(sampleProducts())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
 
-    final gesture = await tester.startGesture(
-      tester.getCenter(find.text('bulbasaur')),
-      kind: PointerDeviceKind.mouse,
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Skate'));
+    await tester.pumpAndSettle();
+    expect(find.text('Page 1 of 2'), findsOneWidget);
+    expect(find.text('10 products'), findsOneWidget);
+    expect(find.text('Shoe 2'), findsOneWidget);
+    expect(find.text('Shoe 1'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'shoe 1');
+    await tester.pumpAndSettle();
+    // Skate shoes whose names contain "shoe 1": 10, 12, 14, 16, 18.
+    expect(find.text('5 products'), findsOneWidget);
+
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('21 products'), findsOneWidget);
+    expect(find.text('shoe 1'), findsNothing);
+  });
+
+  testWidgets('add form opens empty and shows validation errors', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      appWith(
+        FakeProductService(sampleProducts()),
+        home: const ProductFormPage(),
+      ),
     );
-    for (var i = 0; i < 20; i++) {
-      await gesture.moveBy(const Offset(0, 20));
-      await tester.pump(const Duration(milliseconds: 16));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add product'), findsWidgets);
+    expect(fieldText(tester, 'Name'), isEmpty);
+    expect(fieldText(tester, 'Price (₱)'), isEmpty);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Add product'));
+    await tester.pumpAndSettle();
+    expect(find.text('Name is required'), findsOneWidget);
+    expect(find.text('Price is required'), findsOneWidget);
+    expect(find.text('Choose a category'), findsWidgets);
+  });
+
+  testWidgets('adding a product from the shop shows it on page 1', (
+    tester,
+  ) async {
+    await useTallScreen(tester);
+    final service = FakeProductService(sampleProducts());
+    await tester.pumpWidget(appWith(service));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Next'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextFormField, 'Name'), 'Neo');
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Price (₱)'),
+      '4500',
+    );
+    await tester.enterText(find.widgetWithText(TextFormField, 'Stock'), '3');
+    await tester.tap(find.text('Choose a category'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Running').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Add product'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Added Neo'), findsOneWidget);
+    expect(find.text('Page 1 of 4'), findsOneWidget);
+    expect(find.text('22 products'), findsOneWidget);
+    expect(find.text('Neo'), findsOneWidget);
+  });
+
+  testWidgets('edit form opens prefilled and saves changes', (tester) async {
+    await useTallScreen(tester);
+    final service = FakeProductService(sampleProducts());
+    await tester.pumpWidget(appWith(service));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Edit Shoe 3'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit product'), findsOneWidget);
+    expect(fieldText(tester, 'Name'), 'Shoe 3');
+    expect(fieldText(tester, 'Price (₱)'), '1500.00');
+    expect(fieldText(tester, 'Stock'), '3');
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Name'),
+      'Shoe 3 Pro',
+    );
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Updated Shoe 3 Pro'), findsOneWidget);
+    expect(find.text('Shoe 3 Pro'), findsWidgets);
+    final saved = service.products.firstWhere((p) => p.id == 3);
+    expect(saved.name, 'Shoe 3 Pro');
+    expect(saved.price, 1500);
+  });
+
+  testWidgets('deleting the only product on the last page goes back a page', (
+    tester,
+  ) async {
+    await useTallScreen(tester);
+    // 19 products → pages of 6, 6, 6, and 1 (only Shoe 19 on page 4).
+    final service = FakeProductService(sampleProducts().take(19).toList());
+    await tester.pumpWidget(appWith(service));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
     }
-    await gesture.up();
-    await tester.pumpAndSettle();
-    expect(service.calls, 2);
-  });
+    expect(find.text('Page 4 of 4'), findsOneWidget);
 
-  testWidgets('type filter shows matching Pokémon and clears', (tester) async {
-    await tester.pumpWidget(appWith(FakePokemonService(() async => starters)));
+    await tester.tap(find.byTooltip('Delete Shoe 19'));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.widgetWithText(ChoiceChip, 'fire'));
-    await tester.pumpAndSettle();
-    expect(find.text('charmander'), findsOneWidget);
-    expect(find.text('bulbasaur'), findsNothing);
-    expect(find.text('squirtle'), findsNothing);
-
-    await tester.tap(find.widgetWithText(ChoiceChip, 'All'));
-    await tester.pumpAndSettle();
-    expect(find.text('bulbasaur'), findsOneWidget);
-    expect(find.text('squirtle'), findsOneWidget);
-  });
-
-  testWidgets('a type with no matches after refresh offers Clear filter', (
-    tester,
-  ) async {
-    var attempts = 0;
-    final service = FakePokemonService(() async {
-      attempts++;
-      return attempts == 1 ? starters : const [bulbasaur, squirtle];
-    });
-    await tester.pumpWidget(appWith(service));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'fire'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Refresh Pokémon'));
-    await tester.pumpAndSettle();
-    expect(find.text('No fire Pokémon found.'), findsOneWidget);
-
-    await tester.tap(find.text('Clear filter'));
-    await tester.pumpAndSettle();
-    expect(find.text('bulbasaur'), findsOneWidget);
-  });
-
-  testWidgets('heart toggles favorite on the card and in the panel', (
-    tester,
-  ) async {
-    await tester.pumpWidget(appWith(FakePokemonService(() async => starters)));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Show favorites'));
-    await tester.pumpAndSettle();
-    expect(
-      find.text('No favorite Pokémon yet. Tap a heart to add one.'),
-      findsOneWidget,
-    );
-
-    await tester.tap(cardHeart('charmander'));
-    await tester.pumpAndSettle();
-    expect(find.text('Favorites (1)'), findsOneWidget);
-    expect(find.widgetWithText(InputChip, 'charmander'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: cardHeart('charmander'),
-        matching: find.byIcon(Icons.favorite),
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tap(cardHeart('charmander'));
-    await tester.pumpAndSettle();
-    expect(find.text('Favorites (0)'), findsOneWidget);
-    expect(find.widgetWithText(InputChip, 'charmander'), findsNothing);
-
-    await tester.tap(find.byTooltip('Hide favorites'));
-    await tester.pumpAndSettle();
-    expect(find.text('Favorites (0)'), findsNothing);
-  });
-
-  testWidgets('favorites panel stays open on the detail screen', (
-    tester,
-  ) async {
-    await tester.pumpWidget(appWith(FakePokemonService(() async => starters)));
-    await tester.pumpAndSettle();
-    await tester.tap(cardHeart('squirtle'));
-    await tester.tap(find.byTooltip('Show favorites'));
-    await tester.pumpAndSettle();
-
-    await openDetail(tester, 'bulbasaur');
-    expect(find.text('Favorites (1)'), findsOneWidget);
-
-    await tester.tap(find.text('Add to favorites'));
-    await tester.pumpAndSettle();
-    expect(find.text('Favorites (2)'), findsOneWidget);
-    expect(find.text('Remove from favorites'), findsOneWidget);
-
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: cardHeart('bulbasaur'),
-        matching: find.byIcon(Icons.favorite),
-      ),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('nickname can be saved, edited, and removed', (tester) async {
-    await tester.pumpWidget(appWith(FakePokemonService(() async => starters)));
-    await tester.pumpAndSettle();
-    await openDetail(tester, 'charmander');
-
-    await tester.tap(find.text('Add nickname'));
-    await tester.pumpAndSettle();
-    expect(find.text('Remove'), findsNothing);
-    await tester.tap(find.text('Save'));
-    await tester.pump();
-    expect(find.text('Enter a nickname first.'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField), '  Blaze ');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-    expect(find.text('Blaze'), findsWidgets);
-    expect(find.text('Original name: charmander'), findsOneWidget);
-
-    await tester.tap(find.text('Edit nickname'));
-    await tester.pumpAndSettle();
-    expect(find.widgetWithText(TextField, 'Blaze'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'Ember');
-    await tester.tap(find.text('Save'));
-    await tester.pumpAndSettle();
-
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.text('Ember'), findsOneWidget);
-    expect(find.text('charmander'), findsOneWidget);
-
-    await openDetail(tester, 'Ember');
-    await tester.tap(find.text('Edit nickname'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Remove'));
-    await tester.pumpAndSettle();
-    expect(find.text('Ember'), findsNothing);
-    expect(find.text('Add nickname'), findsOneWidget);
-  });
-
-  testWidgets('cancel leaves the nickname unchanged', (tester) async {
-    await tester.pumpWidget(appWith(FakePokemonService(() async => starters)));
-    await tester.pumpAndSettle();
-    await openDetail(tester, 'squirtle');
-    await tester.tap(find.text('Add nickname'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Shelly');
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(find.text('Shelly'), findsNothing);
-    expect(find.text('Add nickname'), findsOneWidget);
-  });
+    expect(find.text('Shoe 19'), findsOneWidget);
 
-  for (final width in [320.0, 600.0, 840.0, 1200.0]) {
-    testWidgets('scrolls through 30 cards at width $width', (tester) async {
-      tester.view.physicalSize = Size(width, 700);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final pokemon = List.generate(
-        30,
-        (i) => Pokemon(
-          name: 'pokemon-${i + 1}',
-          id: i + 1,
-          imageUrl: '',
-          types: const ['normal', 'flying'],
-        ),
-      );
-      final service = FakePokemonService(() async => pokemon);
-      await tester.pumpWidget(appWith(service));
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('pokemon-30'),
-        400,
-        scrollable: find.descendant(
-          of: find.byType(GridView),
-          matching: find.byType(Scrollable),
-        ),
-      );
-      expect(find.text('#030'), findsOneWidget);
-      expect(service.calls, 1);
-      expect(tester.takeException(), isNull);
-    });
-  }
-
-  testWidgets('safe to remove the app while loading', (tester) async {
-    final pending = Completer<List<Pokemon>>();
-    await tester.pumpWidget(appWith(FakePokemonService(() => pending.future)));
-    await tester.pump();
-    await tester.pumpWidget(const SizedBox.shrink());
-    pending.complete(starters);
+    await tester.tap(find.byTooltip('Delete Shoe 19'));
     await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Deleted Shoe 19'), findsOneWidget);
+    expect(find.text('Page 3 of 3'), findsOneWidget);
+    expect(find.text('18 products'), findsOneWidget);
+    expect(service.products.any((Product p) => p.id == 19), isFalse);
   });
 }

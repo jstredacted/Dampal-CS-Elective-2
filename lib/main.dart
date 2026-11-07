@@ -1,37 +1,59 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'screens/pokedex_screen.dart';
+import 'pages/products_page.dart';
 
-void main() {
+Future<void> main() async {
+  // Supabase.initialize runs before runApp, so Flutter must be ready first.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'https://midiimufzoiitaajxolw.supabase.co',
+    publishableKey: 'sb_publishable_xvaY61f-NaPc4a3-YlSwXQ_e458xmh-',
+  );
+
   runApp(
     // ProviderScope stores the state of every Riverpod provider in the app.
-    const ProviderScope(child: PokedexApp()),
+    const ProviderScope(child: SoleStreetApp()),
   );
 }
 
-class PokedexApp extends StatelessWidget {
-  const PokedexApp({super.key});
+class SoleStreetApp extends StatelessWidget {
+  const SoleStreetApp({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF315C4C),
+    );
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Pokédex',
+      title: 'Sole Street',
       // On web and desktop, Flutter only drags lists with touch by default.
-      // Allowing every pointer lets a mouse or trackpad pull to refresh too.
+      // Allowing every pointer lets a mouse or trackpad scroll by dragging too.
       scrollBehavior: const MaterialScrollBehavior().copyWith(
         dragDevices: PointerDeviceKind.values.toSet(),
       ),
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFDC0A2D),
-          brightness: Brightness.light,
-        ),
+        colorScheme: colorScheme,
         useMaterial3: true,
+        cardTheme: CardThemeData(
+          color: colorScheme.surfaceContainerLow,
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        inputDecorationTheme: const InputDecorationTheme(
+          border: OutlineInputBorder(),
+        ),
       ),
-      home: const PokedexScreen(),
+      home: const ProductsPage(),
     );
   }
 }
