@@ -5,9 +5,12 @@ import 'package:dampal_cs_elective_2/models/product_page.dart';
 import 'package:dampal_cs_elective_2/pages/products_page.dart';
 import 'package:dampal_cs_elective_2/providers/category_provider.dart';
 import 'package:dampal_cs_elective_2/providers/product_provider.dart';
+import 'package:dampal_cs_elective_2/providers/user_provider.dart';
+import 'package:dampal_cs_elective_2/services/auth_service.dart';
 import 'package:dampal_cs_elective_2/services/product_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 const categories = [
   Category(id: 1, name: 'Running'),
@@ -81,11 +84,52 @@ class FakeProductService implements ProductService {
   }
 }
 
-Widget appWith(FakeProductService service, {Widget? home}) {
+final testUser = User(
+  id: 'test-user',
+  appMetadata: const {'provider': 'email'},
+  userMetadata: const {},
+  aud: 'authenticated',
+  email: 'tester@example.com',
+  createdAt: '2026-01-01T00:00:00Z',
+);
+
+// Remembers sign-in calls instead of talking to Supabase.
+class FakeAuthService implements AuthService {
+  final List<String> signInEmails = [];
+
+  @override
+  Stream<AuthState> authChanges() => const Stream.empty();
+
+  @override
+  User? get currentUser => null;
+
+  @override
+  Future<void> signIn(String email, String password) async {
+    signInEmails.add(email);
+  }
+
+  @override
+  Future<bool> signUp(String email, String password) async => true;
+
+  @override
+  Future<void> signInWithGitHub() async {}
+
+  @override
+  Future<void> signOut() async {}
+}
+
+Widget appWith(
+  FakeProductService service, {
+  Widget? home,
+  bool signedIn = true,
+  FakeAuthService? auth,
+}) {
   return ProviderScope(
     overrides: [
       productServiceProvider.overrideWithValue(service),
       categoryProvider.overrideWith((ref) async => categories),
+      authServiceProvider.overrideWithValue(auth ?? FakeAuthService()),
+      currentUserProvider.overrideWithValue(signedIn ? testUser : null),
     ],
     child: MaterialApp(home: home ?? const ProductsPage()),
   );

@@ -7,6 +7,8 @@ import '../models/product_page.dart';
 import '../providers/category_provider.dart';
 import '../providers/product_filter_provider.dart';
 import '../providers/product_provider.dart';
+import '../providers/user_provider.dart';
+import '../widgets/account_button.dart';
 import '../widgets/pagination_bar.dart';
 import '../widgets/price_filter.dart';
 import '../widgets/product_card.dart';
@@ -83,6 +85,7 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
   Widget build(BuildContext context) {
     final productsAsync = ref.watch(productProvider);
     final categories = ref.watch(categoryProvider).value ?? const <Category>[];
+    final signedIn = ref.watch(currentUserProvider) != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -96,13 +99,18 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.invalidate(productProvider),
           ),
+          const AccountButton(),
+          const SizedBox(width: 8),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openForm(null),
-        icon: const Icon(Icons.add),
-        label: const Text('Add product'),
-      ),
+      // Only signed-in users can add products.
+      floatingActionButton: signedIn
+          ? FloatingActionButton.extended(
+              onPressed: () => _openForm(null),
+              icon: const Icon(Icons.add),
+              label: const Text('Add product'),
+            )
+          : null,
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1100),
@@ -123,7 +131,8 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
                 const SliverToBoxAdapter(child: LinearProgressIndicator()),
               ...productsAsync.when(
                 skipLoadingOnReload: true,
-                data: (productPage) => _productSlivers(productPage, categories),
+                data: (productPage) =>
+                    _productSlivers(productPage, categories, signedIn),
                 error: (error, stackTrace) => [
                   SliverFillRemaining(
                     hasScrollBody: false,
@@ -153,6 +162,7 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
   List<Widget> _productSlivers(
     ProductPage productPage,
     List<Category> categories,
+    bool signedIn,
   ) {
     if (productPage.items.isEmpty) {
       return [
@@ -192,8 +202,8 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
             return ProductCard(
               product: product,
               categoryName: categoryName(product.categoryId),
-              onEdit: () => _openForm(product),
-              onDelete: () => _confirmDelete(product),
+              onEdit: signedIn ? () => _openForm(product) : null,
+              onDelete: signedIn ? () => _confirmDelete(product) : null,
             );
           },
         ),

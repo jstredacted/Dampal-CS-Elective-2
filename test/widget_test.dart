@@ -194,6 +194,76 @@ void main() {
     expect(saved.price, 1500);
   });
 
+  testWidgets('signed-out shoppers cannot add, edit, or delete', (
+    tester,
+  ) async {
+    await useTallScreen(tester);
+    await tester.pumpWidget(
+      appWith(FakeProductService(sampleProducts()), signedIn: false),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Shoe 1'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.byTooltip('Edit Shoe 1'), findsNothing);
+    expect(find.byTooltip('Delete Shoe 1'), findsNothing);
+  });
+
+  testWidgets('signed-in users see the account menu and edit buttons', (
+    tester,
+  ) async {
+    await useTallScreen(tester);
+    await tester.pumpWidget(appWith(FakeProductService(sampleProducts())));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sign in'), findsNothing);
+    expect(find.byTooltip('Account'), findsOneWidget);
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.byTooltip('Edit Shoe 1'), findsOneWidget);
+  });
+
+  testWidgets('login page checks the form before signing in', (tester) async {
+    final auth = FakeAuthService();
+    await tester.pumpWidget(
+      appWith(
+        FakeProductService(sampleProducts()),
+        signedIn: false,
+        auth: auth,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sign in'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Continue with GitHub'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Email is required'), findsOneWidget);
+    expect(find.text('Password is required'), findsOneWidget);
+    expect(auth.signInEmails, isEmpty);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email'),
+      'tester@example.com',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Password'),
+      '123',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    expect(find.text('Use at least 6 characters'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Password'),
+      'secret123',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+    expect(auth.signInEmails, ['tester@example.com']);
+  });
+
   testWidgets('deleting the only product on the last page goes back a page', (
     tester,
   ) async {

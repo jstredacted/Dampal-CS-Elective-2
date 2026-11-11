@@ -8,14 +8,15 @@ class ProductCard extends StatelessWidget {
     super.key,
     required this.product,
     required this.categoryName,
-    required this.onEdit,
-    required this.onDelete,
+    this.onEdit,
+    this.onDelete,
   });
 
   final Product product;
   final String? categoryName;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  // null when the user is signed out, which hides the edit/delete buttons.
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -69,24 +70,25 @@ class ProductCard extends StatelessWidget {
                 ],
               ),
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                IconButton(
-                  tooltip: 'Edit ${product.name}',
-                  icon: const Icon(Icons.edit_outlined),
-                  onPressed: onEdit,
-                ),
-                IconButton(
-                  tooltip: 'Delete ${product.name}',
-                  icon: Icon(
-                    Icons.delete_outline,
-                    color: theme.colorScheme.error,
+            if (onEdit != null || onDelete != null)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    tooltip: 'Edit ${product.name}',
+                    icon: const Icon(Icons.edit_outlined),
+                    onPressed: onEdit,
                   ),
-                  onPressed: onDelete,
-                ),
-              ],
-            ),
+                  IconButton(
+                    tooltip: 'Delete ${product.name}',
+                    icon: Icon(
+                      Icons.delete_outline,
+                      color: theme.colorScheme.error,
+                    ),
+                    onPressed: onDelete,
+                  ),
+                ],
+              ),
           ],
         ),
       ),
