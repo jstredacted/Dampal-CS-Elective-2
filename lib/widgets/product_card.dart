@@ -10,13 +10,20 @@ class ProductCard extends StatelessWidget {
     required this.categoryName,
     this.onEdit,
     this.onDelete,
+    this.onAddToCart,
+    this.inCart = 0,
   });
 
   final Product product;
   final String? categoryName;
-  // null when the user is signed out, which hides the edit/delete buttons.
+  // Admins get onEdit/onDelete. Customers get onAddToCart instead.
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final VoidCallback? onAddToCart;
+  // How many of this product are already in the customer's cart.
+  final int inCart;
+
+  bool get _isAdminCard => onEdit != null || onDelete != null;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +77,7 @@ class ProductCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (onEdit != null || onDelete != null)
+            if (_isAdminCard)
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -88,10 +95,55 @@ class ProductCard extends StatelessWidget {
                     onPressed: onDelete,
                   ),
                 ],
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: _AddToCartButton(
+                  product: product,
+                  inCart: inCart,
+                  onPressed: onAddToCart,
+                ),
               ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AddToCartButton extends StatelessWidget {
+  const _AddToCartButton({
+    required this.product,
+    required this.inCart,
+    required this.onPressed,
+  });
+
+  final Product product;
+  final int inCart;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final outOfStock = product.stock <= 0;
+    final atLimit = inCart >= product.stock;
+
+    final String label;
+    if (outOfStock) {
+      label = 'Out of stock';
+    } else if (atLimit) {
+      label = 'All $inCart in cart';
+    } else if (inCart > 0) {
+      label = 'Add ($inCart in cart)';
+    } else {
+      label = 'Add to cart';
+    }
+
+    return FilledButton.tonalIcon(
+      // A null onPressed disables the button.
+      onPressed: outOfStock || atLimit ? null : onPressed,
+      icon: const Icon(Icons.add_shopping_cart, size: 18),
+      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
     );
   }
 }

@@ -1,9 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/product.dart';
 import '../providers/category_provider.dart';
 import '../providers/product_provider.dart';
+import '../utils/errors.dart';
 
 // One page for both adding and editing.
 // product == null → Add (empty form). product != null → Edit (prefilled).
@@ -22,7 +26,10 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
   final _desc = TextEditingController();
   final _price = TextEditingController();
   final _stock = TextEditingController();
-  final _imageUrl = TextEditingController();
+  // The saved image link, and a newly picked image that is not uploaded yet.
+  String _imageUrl = '';
+  Uint8List? _pickedBytes;
+  String? _pickedName;
   int? _categoryId;
   bool _saving = false;
 
@@ -38,7 +45,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
       _desc.text = product.description;
       _price.text = product.price.toStringAsFixed(2);
       _stock.text = product.stock.toString();
-      _imageUrl.text = product.imageUrl;
+      _imageUrl = product.imageUrl;
       _categoryId = product.categoryId;
     }
   }
@@ -49,8 +56,30 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     _desc.dispose();
     _price.dispose();
     _stock.dispose();
-    _imageUrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      // Smaller files upload faster and load faster in the shop.
+      maxWidth: 1200,
+      imageQuality: 85,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    setState(() {
+      _pickedBytes = bytes;
+      _pickedName = file.name;
+    });
+  }
+
+  void _removeImage() {
+    setState(() {
+      _pickedBytes = null;
+      _pickedName = null;
+      _imageUrl = '';
+    });
   }
 
   Future<void> _save() async {
@@ -60,6 +89,12 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     final name = _name.text.trim();
     try {
       final notifier = ref.read(productProvider.notifier);
+      // Upload first, so the product row is saved with the image's link.
+      var imageUrl = _imageUrl;
+      if (_pickedBytes != null) {
+        imageUrl = await notifier.uploadImage(_pickedBytes!, _pickedName!);
+      }
+
       // we have 2 methods for creating & updating, hence the if/else
       if (_isEditing) {
         await notifier.updateProduct(
@@ -68,7 +103,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
             description: _desc.text.trim(),
             price: double.parse(_price.text.trim()),
             stock: int.parse(_stock.text.trim()),
-            imageUrl: _imageUrl.text.trim(),
+            imageUrl: imageUrl,
             categoryId: _categoryId,
           ),
         );
@@ -80,7 +115,7 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
             description: _desc.text.trim(),
             price: double.parse(_price.text.trim()),
             stock: int.parse(_stock.text.trim()),
-            imageUrl: _imageUrl.text.trim(),
+            imageUrl: imageUrl,
             categoryId: _categoryId,
           ),
         );
@@ -90,9 +125,9 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not save: $error')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save: ${friendlyError(error)}')),
+      );
     }
   }
 
@@ -146,8 +181,8 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
                     final empty = _required(v, 'Price');
                     if (empty != null) return empty;
                     final price = double.tryParse(v!.trim());
-                    if (price == null || price <= 0) {
-                      return 'Enter a price greater than 0';
+                    if (price == null || price < 0) {
+                      return 'Enter a price of 0 or more';
                     }
                     return null;
                   },
@@ -169,15 +204,6 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
                     }
                     return null;
                   },
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _imageUrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Image URL (optional)',
-                    prefixIcon: Icon(Icons.image_outlined),
-                  ),
-                  keyboardType: TextInputType.url,
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<int>(
@@ -202,6 +228,13 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
                   validator: (value) =>
                       value == null ? 'Choose a category' : null,
                 ),
+                const SizedBox(height: 16),
+                _ImagePickerField(
+                  pickedBytes: _pickedBytes,
+                  imageUrl: _imageUrl,
+                  onPick: _saving ? null : _pickImage,
+                  onRemove: _saving ? null : _removeImage,
+                ),
                 const SizedBox(height: 24),
                 FilledButton.icon(
                   onPressed: _saving ? null : _save,
@@ -218,6 +251,82 @@ class _ProductFormPageState extends ConsumerState<ProductFormPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// Shows the current or newly picked image with buttons to change or remove it.
+class _ImagePickerField extends StatelessWidget {
+  const _ImagePickerField({
+    required this.pickedBytes,
+    required this.imageUrl,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  final Uint8List? pickedBytes;
+  final String imageUrl;
+  final VoidCallback? onPick;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasImage = pickedBytes != null || imageUrl.isNotEmpty;
+
+    final Widget preview;
+    if (pickedBytes != null) {
+      preview = Image.memory(pickedBytes!, fit: BoxFit.cover);
+    } else if (imageUrl.isNotEmpty) {
+      preview = Image.network(
+        imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) =>
+            const Center(child: Icon(Icons.broken_image_outlined)),
+      );
+    } else {
+      preview = const Center(child: Icon(Icons.image_outlined, size: 40));
+    }
+
+    return Row(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox.square(
+            dimension: 96,
+            child: ColoredBox(
+              color: theme.colorScheme.surfaceContainerHighest,
+              child: preview,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Image (optional)', style: theme.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onPick,
+                    icon: const Icon(Icons.upload_outlined),
+                    label: Text(hasImage ? 'Change image' : 'Choose image'),
+                  ),
+                  if (hasImage)
+                    TextButton(
+                      onPressed: onRemove,
+                      child: const Text('Remove'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

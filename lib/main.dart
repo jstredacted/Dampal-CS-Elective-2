@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'pages/products_page.dart';
+import 'pages/auth_gate.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   // Supabase.initialize runs before runApp, so Flutter must be ready first.
@@ -25,10 +26,6 @@ class SoleStreetApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF315C4C),
-    );
-
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Sole Street',
@@ -37,23 +34,9 @@ class SoleStreetApp extends StatelessWidget {
       scrollBehavior: const MaterialScrollBehavior().copyWith(
         dragDevices: PointerDeviceKind.values.toSet(),
       ),
-      theme: ThemeData(
-        colorScheme: colorScheme,
-        useMaterial3: true,
-        cardTheme: CardThemeData(
-          color: colorScheme.surfaceContainerLow,
-          elevation: 0,
-          margin: EdgeInsets.zero,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        inputDecorationTheme: const InputDecorationTheme(
-          border: OutlineInputBorder(),
-        ),
-      ),
-      home: const ProductsPage(),
+      theme: buildAppTheme(),
+      // AuthGate decides between the login page and the shop.
+      home: const AuthGate(),
     );
   }
 }

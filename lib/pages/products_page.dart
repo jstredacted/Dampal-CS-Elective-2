@@ -4,14 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/category.dart';
 import '../models/product.dart';
 import '../models/product_page.dart';
+import '../providers/cart_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/product_filter_provider.dart';
 import '../providers/product_provider.dart';
 import '../providers/user_provider.dart';
+import '../utils/errors.dart';
 import '../widgets/account_button.dart';
+import '../widgets/message_view.dart';
 import '../widgets/pagination_bar.dart';
 import '../widgets/price_filter.dart';
 import '../widgets/product_card.dart';
+import 'admin_orders_page.dart';
+import 'cart_page.dart';
+import 'categories_page.dart';
+import 'order_history_page.dart';
 import 'product_form_page.dart';
 
 class ProductsPage extends ConsumerStatefulWidget {
@@ -30,17 +37,23 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
     super.dispose();
   }
 
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _open(Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  }
+
   // The same form page is used for adding (product == null) and editing.
   Future<void> _openForm(Product? product) async {
     final message = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (_) => ProductFormPage(product: product)),
     );
-    if (message != null && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    }
+    if (message != null && mounted) _showMessage(message);
   }
 
   Future<void> _confirmDelete(Product product) async {
@@ -63,17 +76,17 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
     );
     if (confirmed != true || !mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(productProvider.notifier).deleteProduct(product.id);
-      messenger.showSnackBar(
-        SnackBar(content: Text('Deleted ${product.name}')),
-      );
+      _showMessage('Deleted ${product.name}');
     } catch (error) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not delete product: $error')),
-      );
+      _showMessage('Could not delete product: ${friendlyError(error)}');
     }
+  }
+
+  void _addToCart(Product product) {
+    final error = ref.read(cartProvider.notifier).add(product);
+    _showMessage(error ?? 'Added ${product.name} to your cart');
   }
 
   void _clearFilters() {
@@ -85,26 +98,51 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
   Widget build(BuildContext context) {
     final productsAsync = ref.watch(productProvider);
     final categories = ref.watch(categoryProvider).value ?? const <Category>[];
-    final signedIn = ref.watch(currentUserProvider) != null;
+    final isAdmin = ref.watch(isAdminProvider);
+    final cartCount = ref.watch(cartCountProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Sole Street',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: Text(isAdmin ? 'Sole Street · Admin' : 'Sole Street'),
         actions: [
           IconButton(
             tooltip: 'Refresh products',
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.invalidate(productProvider),
           ),
+          if (isAdmin) ...[
+            IconButton(
+              tooltip: 'Categories',
+              icon: const Icon(Icons.category_outlined),
+              onPressed: () => _open(const CategoriesPage()),
+            ),
+            IconButton(
+              tooltip: 'All orders',
+              icon: const Icon(Icons.receipt_long_outlined),
+              onPressed: () => _open(const AdminOrdersPage()),
+            ),
+          ] else ...[
+            IconButton(
+              tooltip: 'My orders',
+              icon: const Icon(Icons.receipt_long_outlined),
+              onPressed: () => _open(const OrderHistoryPage()),
+            ),
+            IconButton(
+              tooltip: 'Cart',
+              icon: Badge(
+                isLabelVisible: cartCount > 0,
+                label: Text('$cartCount'),
+                child: const Icon(Icons.shopping_bag_outlined),
+              ),
+              onPressed: () => _open(const CartPage()),
+            ),
+          ],
           const AccountButton(),
           const SizedBox(width: 8),
         ],
       ),
-      // Only signed-in users can add products.
-      floatingActionButton: signedIn
+      // Only admins can add products.
+      floatingActionButton: isAdmin
           ? FloatingActionButton.extended(
               onPressed: () => _openForm(null),
               icon: const Icon(Icons.add),
@@ -132,14 +170,16 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
               ...productsAsync.when(
                 skipLoadingOnReload: true,
                 data: (productPage) =>
-                    _productSlivers(productPage, categories, signedIn),
+                    _productSlivers(productPage, categories, isAdmin),
                 error: (error, stackTrace) => [
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: _Message(
-                      icon: Icons.cloud_off,
+                    child: MessageView(
+                      icon: isPermissionDenied(error)
+                          ? Icons.lock_outline
+                          : Icons.cloud_off,
                       title: 'Could not load products.',
-                      detail: '$error',
+                      detail: friendlyError(error),
                       buttonLabel: 'Try again',
                       onPressed: () => ref.invalidate(productProvider),
                     ),
@@ -162,13 +202,13 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
   List<Widget> _productSlivers(
     ProductPage productPage,
     List<Category> categories,
-    bool signedIn,
+    bool isAdmin,
   ) {
     if (productPage.items.isEmpty) {
       return [
         SliverFillRemaining(
           hasScrollBody: false,
-          child: _Message(
+          child: MessageView(
             icon: Icons.search_off,
             title: 'No sneakers match your filters.',
             buttonLabel: 'Clear filters',
@@ -185,6 +225,10 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
       return null;
     }
 
+    // Watching the cart here updates the "in cart" counts on each card.
+    ref.watch(cartProvider);
+    final cart = ref.read(cartProvider.notifier);
+
     return [
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -192,7 +236,7 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
           // Each card is at most 240 wide, so wider screens fit more columns.
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 240,
-            mainAxisExtent: 330,
+            mainAxisExtent: 340,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
           ),
@@ -202,8 +246,10 @@ class _ProductsPageState extends ConsumerState<ProductsPage> {
             return ProductCard(
               product: product,
               categoryName: categoryName(product.categoryId),
-              onEdit: signedIn ? () => _openForm(product) : null,
-              onDelete: signedIn ? () => _confirmDelete(product) : null,
+              onEdit: isAdmin ? () => _openForm(product) : null,
+              onDelete: isAdmin ? () => _confirmDelete(product) : null,
+              onAddToCart: isAdmin ? null : () => _addToCart(product),
+              inCart: cart.quantityOf(product.id),
             );
           },
         ),
@@ -280,43 +326,6 @@ class _Filters extends ConsumerWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _Message extends StatelessWidget {
-  const _Message({
-    required this.icon,
-    required this.title,
-    this.detail,
-    required this.buttonLabel,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String title;
-  final String? detail;
-  final String buttonLabel;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 48),
-          const SizedBox(height: 12),
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          if (detail != null) ...[
-            const SizedBox(height: 4),
-            Text(detail!, textAlign: TextAlign.center),
-          ],
-          const SizedBox(height: 12),
-          FilledButton(onPressed: onPressed, child: Text(buttonLabel)),
-        ],
-      ),
     );
   }
 }

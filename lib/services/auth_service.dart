@@ -16,18 +16,28 @@ class AuthService {
     await _auth.signInWithPassword(email: email, password: password);
   }
 
-  // Returns true when the user is signed in right away. It returns false when
-  // Supabase still needs the user to confirm their email first.
-  Future<bool> signUp(String email, String password) async {
-    final response = await _auth.signUp(email: email, password: password);
+  // The names go into the user's metadata. The handle_new_user database
+  // trigger copies them into the new row of the profiles table.
+  // Returns false when Supabase still needs the user to confirm their email.
+  Future<bool> signUp({
+    required String email,
+    required String password,
+    required String firstName,
+    required String lastName,
+  }) async {
+    final response = await _auth.signUp(
+      email: email,
+      password: password,
+      data: {'first_name': firstName, 'last_name': lastName},
+    );
     return response.session != null;
   }
 
-  // Opens GitHub's login page. After the user approves, GitHub sends them back
-  // to this app, and Supabase finishes the sign-in automatically.
-  Future<void> signInWithGitHub() async {
+  // Opens Google's sign-in page. After the user picks an account, Google
+  // sends them back to this app and Supabase finishes the sign-in.
+  Future<void> signInWithGoogle() async {
     await _auth.signInWithOAuth(
-      OAuthProvider.github,
+      OAuthProvider.google,
       // On the web, come back to the same address the app is running on.
       redirectTo: kIsWeb ? Uri.base.origin : null,
     );

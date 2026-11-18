@@ -1,13 +1,19 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/product.dart';
 import '../models/product_page.dart';
 import '../services/product_service.dart';
+import '../services/storage_service.dart';
 import 'product_filter_provider.dart';
 import 'supabase_provider.dart';
 
 final productServiceProvider = Provider<ProductService>((ref) {
   return ProductService(ref.watch(supabaseProvider));
+});
+
+final storageServiceProvider = Provider<StorageService>((ref) {
+  return StorageService(ref.watch(supabaseProvider));
 });
 
 final productProvider = AsyncNotifierProvider<ProductNotifier, ProductPage>(
@@ -21,6 +27,11 @@ class ProductNotifier extends AsyncNotifier<ProductPage> {
   Future<ProductPage> build() {
     final filter = ref.watch(productFilterProvider);
     return ref.read(productServiceProvider).fetchProducts(filter);
+  }
+
+  // Returns the public link of the uploaded image.
+  Future<String> uploadImage(Uint8List bytes, String fileName) {
+    return ref.read(storageServiceProvider).uploadProductImage(bytes, fileName);
   }
 
   Future<void> addProduct(Product product) async {

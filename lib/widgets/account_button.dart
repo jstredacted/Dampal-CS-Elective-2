@@ -1,31 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../pages/login_page.dart';
 import '../providers/user_provider.dart';
 
-// Shows "Sign in" when signed out, and the user's email + Sign out when in.
+// The avatar menu in the app bar: shows who is signed in and their role,
+// and lets them sign out.
 class AccountButton extends ConsumerWidget {
   const AccountButton({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProvider);
+    final profile = ref.watch(profileProvider).value;
+    if (user == null) return const SizedBox.shrink();
 
-    if (user == null) {
-      return TextButton.icon(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-        ),
-        icon: const Icon(Icons.login),
-        label: const Text('Sign in'),
-      );
-    }
-
-    // GitHub users have their name saved in userMetadata by Supabase.
-    final name =
-        user.userMetadata?['user_name'] as String? ?? user.email ?? 'Account';
+    final name = profile?.fullName ?? user.email ?? 'Account';
+    final role = profile?.isAdmin == true ? 'Admin' : 'Customer';
     final provider = user.appMetadata['provider'] as String? ?? 'email';
 
     return PopupMenuButton<String>(
@@ -36,17 +26,16 @@ class AccountButton extends ConsumerWidget {
       ),
       onSelected: (value) async {
         if (value != 'signOut') return;
+        final messenger = ScaffoldMessenger.of(context);
+        // Close any open screens so the sign-in page is shown cleanly.
+        Navigator.of(context).popUntil((route) => route.isFirst);
         await ref.read(authServiceProvider).signOut();
-        if (context.mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Signed out')));
-        }
+        messenger.showSnackBar(const SnackBar(content: Text('Signed out')));
       },
       itemBuilder: (context) => [
         PopupMenuItem(
           enabled: false,
-          child: Text('$name\nSigned in with $provider'),
+          child: Text('$name · $role\n${user.email ?? ''} ($provider)'),
         ),
         const PopupMenuDivider(),
         const PopupMenuItem(
